@@ -51,6 +51,7 @@ int CreateSocket(char *argv[])
     bzero(&addr, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_port = htons(atoi(argv[2]));
+    addr.sin_addr.s_addr = inet_addr(argv[1]);
     /*绑定通信结构体*/
     if (bind(fd, (Addr *)&addr, sizeof(Addr_in)))
     {
@@ -108,7 +109,7 @@ int main(int argc, char *argv[])
     FD_ZERO(&temset);
     FD_SET(fd, &set);
 
-    while (1)
+   while (1)
     {
         temset = set;
         if ((ret = select(MAX_SOCKET_FD, &temset, nullptr, nullptr, nullptr)) < 0)
@@ -117,34 +118,36 @@ int main(int argc, char *argv[])
             break;
         }
 
+        /* 检查监听套接字 fd，处理新连接 */
         if (FD_ISSET(fd, &temset))
         {
-            /*接收客户端连接，并生成新的文件描述符*/
+            /* 接收客户端连接，并生成新的文件描述符 */
             if ((newfd = accept(fd, (Addr *)&clientAddr, &clientlen)) < 0)
             {
                 cerr << "accept is fail" << endl;
                 close(fd);
                 return 1;
             }
-            cout << "IP:" << inet_ntoa(clientAddr.sin_addr) << "已建立连接\t" << "端口号:" << ntohs(clientAddr.sin_port) << endl;
+            cout << "IP:" << inet_ntoa(clientAddr.sin_addr) << "已建立连接\t"
+                 << "端口号:" << ntohs(clientAddr.sin_port) << endl;
             FD_SET(newfd, &set);
         }
-        else /*处理客户端数据*/
+
+        /* 遍历文件描述符，处理客户端数据 */
+        for (int i = fd + 1; i < MAX_SOCKET_FD; ++i)
         {
-            for (int i = fd + 1; i < MAX_SOCKET_FD; ++i)
+            if (FD_ISSET(i, &temset))
             {
-                if (FD_ISSET(i, &temset))
+                if (DataHandle(i) <= 0) // 客户端退出，把文件描述符剔除
                 {
-                    if (DataHandle(i) <= 0) // 客户端退出，把文件描述符剔除
+                    if (getpeername(i, (Addr *)&clientAddr, &clientlen) < 0)
                     {
-                        if ((getpeername(i, (Addr *)&clientAddr, &clientlen)) < 0)
-                        {
-                            cerr << "getpeername is fail" << endl;
-                            return 1;
-                        }
-                        cout << "IP:" << inet_ntoa(clientAddr.sin_addr) << "已退出连接\t" << "端口号:" << ntohs(clientAddr.sin_port) << endl;              
-                        FD_CLR(i, &set);
+                        cerr << "getpeername is fail" << endl;
+                        return 1;
                     }
+                    cout << "IP:" << inet_ntoa(clientAddr.sin_addr) << " "
+                         << "端口号:" << ntohs(clientAddr.sin_port) <<" 已退出连接\t" << endl;
+                    FD_CLR(i, &set);
                 }
             }
         }
